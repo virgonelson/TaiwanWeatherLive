@@ -9,4 +9,4 @@
 - 按鈕切換不同地區直播，選中樣式為白底黑框黑字。
 
 ## 部署
-透過 GitHub Pages 部署：https://<您的用戶名>.github.io/TaiwanWeatherLive/
+透過 GitHub Pages 部署：https://virgonelson.github.io/TaiwanWeatherLive/
