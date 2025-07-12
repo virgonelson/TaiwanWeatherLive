@@ -1,0 +1,556 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="臺灣各區海氣象即時影像，提供基隆北海岸、西部中部沿海、宜花東海岸、高屏墾丁海岸、雲嘉南地區、澎湖金門馬祖等地的實況直播">
+    <meta name="keywords" content="臺灣, 海氣象, 即時影像, 直播, 基隆北海岸, 西部中部沿海, 宜花東海岸, 高屏墾丁海岸, 雲嘉南地區, 澎湖金門馬祖">
+    <title>臺灣各區海氣象即時影像</title>
+    <style>
+        body {
+            font-family: 'Noto Sans TC', Arial, sans-serif;
+            margin: 0;
+            padding: 10px;
+            background: linear-gradient(135deg, #e6f0fa 0%, #3498db 100%);
+            color: #333;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .header-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 1440px;
+            margin-bottom: 10px;
+            padding-left: 10px;
+        }
+        h1 {
+            font-size: 1.3em;
+            color: #000000;
+            text-align: left;
+            margin: 0;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+            flex: 0 0 auto;
+        }
+        .datetime {
+            font-size: 0.9em;
+            color: #2c3e50;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 5px 10px;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            flex: 0 0 auto;
+            order: 2;
+        }
+        .button-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            flex: 1;
+            justify-content: center;
+            order: 1;
+        }
+        .region-button {
+            padding: 8px 16px;
+            font-size: 0.9em;
+            background-color: #2c3e50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .region-button:hover {
+            background-color: #34495e;
+        }
+        .region-button.active {
+            background-color: white;
+            border: 1px solid black;
+            color: black;
+        }
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(3, auto);
+            gap: 10px;
+            width: 100%;
+            max-width: 1440px;
+            display: none;
+        }
+        .image-grid.active {
+            display: grid;
+        }
+        .image-container {
+            width: 100%;
+            height: 230px;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            background-color: rgba(255, 255, 255, 0.9);
+        }
+        .image-container h3 {
+            font-size: 1em;
+            margin: 5px 0;
+            text-align: center;
+            color: #2c3e50;
+        }
+        .image-container iframe {
+            width: 100%;
+            height: calc(100% - 30px);
+            border: none;
+            display: block;
+            margin: 0 auto;
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            display: none;
+            z-index: 1000;
+        }
+        .toast.show {
+            display: block;
+        }
+        footer {
+            margin-top: 20px;
+            text-align: center;
+            color: #2c3e50;
+            font-size: 0.9em;
+        }
+        @media (max-width: 768px) {
+            .header-container {
+                flex-direction: column;
+                align-items: center;
+                padding-left: 0;
+            }
+            .datetime {
+                margin-bottom: 5px;
+                font-size: 0.8em;
+            }
+            .button-container {
+                justify-content: center;
+                margin-bottom: 5px;
+            }
+            .region-button {
+                padding: 6px 12px;
+                font-size: 0.8em;
+            }
+            h1 {
+                margin: 5px 0;
+            }
+            .image-grid {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto;
+            }
+            .image-container {
+                height: 210px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header-container">
+        <h1 aria-label="臺灣各區海氣象即時影像">臺灣各區海氣象即時影像 📹</h1>
+        <div class="button-container">
+            <button class="region-button active" data-region="keelung">基隆北海岸</button>
+            <button class="region-button" data-region="westcentral">西部中部沿海</button>
+            <button class="region-button" data-region="yilan">宜花東海岸</button>
+            <button class="region-button" data-region="kaoping">高屏墾丁海岸</button>
+            <button class="region-button" data-region="yunlin">雲嘉南地區</button>
+            <button class="region-button" data-region="outer">澎湖金門馬祖</button>
+        </div>
+        <div class="datetime" id="currentTime"></div>
+    </div>
+    <div class="image-grid active" id="keelung">
+        <div class="image-container">
+            <h3>基隆和平島</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/I5O36tXS25w?autoplay=1&mute=1" title="基隆和平島即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>基隆和平島</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/ZNxEYgQ945s?autoplay=1&mute=1" title="基隆和平島即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>基隆潮境公園</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/Lw3bVTcoicA?autoplay=1&mute=1" title="基隆潮境公園即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>基隆外木山</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/LInNQYAbAwQ?autoplay=1&mute=1" title="基隆外木山即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>新北野柳</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/SfxwmGZwLFc?autoplay=1&mute=1" title="新北野柳即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>新北九份</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/XSD5ptYisw8?autoplay=1&mute=1" title="新北九份即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>新北金山</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/sROjriodW7w?autoplay=1&mute=1" title="新北金山即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>新北萬里</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/Shp8KdJK9-Y?autoplay=1&mute=1" title="新北萬里即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>新北淡水</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/_Szh7I5u0dM?autoplay=1&mute=1" title="新北淡水即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>新北富貴角</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/W4fh1OW_2YQ?autoplay=1&mute=1" title="新北富貴角即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>新北龍洞</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/KFOzFgO3MHE?autoplay=1&mute=1" title="新北龍洞即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>新北福隆</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/qgVQPlU-wmU?autoplay=1&mute=1" title="新北福隆即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+    </div>
+    <div class="image-grid" id="westcentral">
+        <div class="image-container">
+            <h3>新北觀音山</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/59-_8FNb6vo?autoplay=1&mute=1" title="新北觀音山即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>桃園永安漁港</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/tD_a03trUvE?autoplay=1&mute=1" title="桃園永安漁港即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>桃園國際機場</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/wWEnxWA7nnY?autoplay=1&mute=1" title="桃園國際機場即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>桃園觀新藻礁</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/FulZrINitCU?autoplay=1&mute=1" title="桃園觀新藻礁即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>新竹南寮漁港</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/ELn3MZlePR4?autoplay=1&mute=1" title="新竹南寮漁港即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>苗栗外埔</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/4oUIyExq9uE?autoplay=1&mute=1" title="苗栗外埔即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺中高美濕地</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/fjhg3gAnMFg?autoplay=1&mute=1" title="臺中高美濕地即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺中港</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/LW26089repE?autoplay=1&mute=1" title="臺中港即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺中望高寮</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/lhXXhDyjFtI?autoplay=1&mute=1" title="臺中望高寮即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺中巨蛋</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/bz_3DxQPKcw?autoplay=1&mute=1" title="臺中巨蛋即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>彰化八卦山</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/RaTbGYKMUtk?autoplay=1&mute=1" title="彰化八卦山即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>彰化王功漁港</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/hUG2XK08W5Q?autoplay=1&mute=1" title="彰化王功漁港即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+    </div>
+    <div class="image-grid" id="yilan">
+        <div class="image-container">
+            <h3>宜蘭外澳</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/UgoT-QTbYvo?autoplay=1&mute=1" title="宜蘭外澳即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>宜蘭蘇澳</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/McTsXVxi1io?autoplay=1&mute=1" title="宜蘭蘇澳即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>宜蘭南方澳</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/xlTH56CwuVg?autoplay=1&mute=1" title="宜蘭南方澳即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>花蓮七星潭</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/j3l32VFi5M8?autoplay=1&mute=1" title="花蓮七星潭即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>花蓮石梯坪</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/mXnigLvIL0Q?autoplay=1&mute=1" title="花蓮石梯坪即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>花蓮長虹橋</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/JnD8Rk3o0BM?autoplay=1&mute=1" title="花蓮長虹橋即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺東三仙台</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/dQ7Sd6PGLdA?autoplay=1&mute=1" title="臺東三仙台即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺東多良車站</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/UCG1aXVO8H8?autoplay=1&mute=1" title="臺東多良車站即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺東富岡漁港</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/SfeTOJSC08g?autoplay=1&mute=1" title="臺東富岡漁港即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺東鹿野</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/rvc1klNIgQc?autoplay=1&mute=1" title="臺東鹿野即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺東華源</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/TY4qQElcUrA?autoplay=1&mute=1" title="臺東華源即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>綠島</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/pLdBc8PvZko?autoplay=1&mute=1" title="綠島即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+    </div>
+    <div class="image-grid" id="kaoping">
+        <div class="image-container">
+            <h3>高雄旗津</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/ka7FV0sCvxQ?autoplay=1&mute=1" title="高雄旗津即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>高雄西子灣</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/ir0SCDPLQ_U?autoplay=1&mute=1" title="高雄西子灣即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>高雄港內</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/6nqkP-lqJuA?autoplay=1&mute=1" title="高雄港內即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>高雄市區</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/C03Itx8iSC0?autoplay=1&mute=1" title="高雄市區即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>高雄港第二港口</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/lDk1tdMGW8g?autoplay=1&mute=1" title="高雄港第二港口即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>屏東興海漁港</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/1yJkkNTAP74?autoplay=1&mute=1" title="屏東興海漁港即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>屏東小琉球</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/Z0IxgtSg6as?autoplay=1&mute=1" title="屏東小琉球即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>屏東海生館</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/m6luhI-niM0?autoplay=1&mute=1" title="屏東海生館即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>墾丁船帆石</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/f8yo_osMxAg?autoplay=1&mute=1" title="墾丁船帆石即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>墾丁南灣</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/jUnFuJSj0OU?autoplay=1&mute=1" title="墾丁南灣即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>墾丁國家公園</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/wRleP2_WaPc?autoplay=1&mute=1" title="墾丁國家公園即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>墾丁佳樂水</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/T2lPa9ACGak?autoplay=1&mute=1" title="墾丁佳樂水即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+    </div>
+    <div class="image-grid" id="yunlin">
+        <div class="image-container">
+            <h3>雲林萡子寮</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/AXU3VLz9TsY?autoplay=1&mute=1" title="雲林萡子寮即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>嘉義布袋港</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/qXWOjx4MU1g?autoplay=1&mute=1" title="嘉義布袋港即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>嘉義東石漁人碼頭</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/lsrOYHqmJ0c?autoplay=1&mute=1" title="嘉義東石漁人碼頭即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>嘉義阿里山</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/mHk9E9iqQmU?autoplay=1&mute=1" title="嘉義阿里山即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>嘉義奮起湖</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/B6eki-0-w0g?autoplay=1&mute=1" title="嘉義奮起湖即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>嘉義曾文水庫</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/EH4V8IwFIp4?autoplay=1&mute=1" title="嘉義曾文水庫即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>嘉義二延平步道</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/j2L_559nCjc?autoplay=1&mute=1" title="嘉義二延平步道即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺南黃金海岸</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/uCXgNUJO9e8?autoplay=1&mute=1" title="臺南黃金海岸即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺南觀夕平台</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/TizljV2BVrA?autoplay=1&mute=1" title="臺南觀夕平台即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺南安平港</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/ckBL_d6iaEU?autoplay=1&mute=1" title="臺南安平港即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>臺南西拉雅</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/xbojeDKjcaM?autoplay=1&mute=1" title="臺南西拉雅即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+    </div>
+    <div class="image-grid" id="outer">
+        <div class="image-container">
+            <h3>澎湖觀音亭</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/xGilwi36tcc?autoplay=1&mute=1" title="澎湖觀音亭即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>澎湖奎壁山摩西分海</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/X-_9UgWR9CY?autoplay=1&mute=1" title="澎湖奎壁山摩西分海即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>澎湖鎖港灣</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/tHcMCTgBYaU?autoplay=1&mute=1" title="澎湖鎖港灣即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>金門大橋</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/M4EJtf_iP8s?autoplay=1&mute=1" title="金門大橋即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>金門134高地</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/-srNHTE-Nf0?autoplay=1&mute=1" title="金門134高地即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>金門建功嶼</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/uh_yNAE01w8?autoplay=1&mute=1" title="金門建功嶼即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>馬祖北竿</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/6GXK2XMGgUc?autoplay=1&mute=1" title="馬祖北竿即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>馬祖南竿福澳港</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/g-UAUkDsRSs?autoplay=1&mute=1" title="馬祖南竿福澳港即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        <div class="image-container">
+            <h3>馬祖南竿鐵堡</h3>
+            <iframe loading="lazy" src="https://www.youtube.com/embed/NVf3j-5I1Fk?autoplay=1&mute=1" title="馬祖南竿鐵堡即時影像" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+    </div>
+    <div class="toast" id="autoplayToast">若影片未自動播放，請點擊頁面以啟用</div>
+    <footer>本網站由中央氣象署基隆氣象站 鄧乃誠 製作，最適解析度為 1600x900，建議使用 F11 全螢幕模式閱覽，放置作為監控使用</footer>
+    <script>
+        // Update current time in CST
+        function updateTime() {
+            const now = new Date();
+            const options = {
+                timeZone: 'Asia/Taipei',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            };
+            const formatter = new Intl.DateTimeFormat('zh-TW', options);
+            const timeString = formatter.format(now).replace(/(\d{4})\/(\d{2})\/(\d{2})/, '$1-$2-$3');
+            document.getElementById('currentTime').textContent = `現在時間：${timeString}`;
+        }
+        updateTime();
+        setInterval(updateTime, 1000);
+
+        // Region switching and autoplay logic
+        window.addEventListener('load', () => {
+            const buttons = document.querySelectorAll('.region-button');
+            const grids = document.querySelectorAll('.image-grid');
+            const toast = document.getElementById('autoplayToast');
+
+            buttons.forEach(button => {
+                button.addEventListener('click', () => {
+                    buttons.forEach(btn => btn.classList.remove('active'));
+                    grids.forEach(grid => grid.classList.remove('active'));
+
+                    button.classList.add('active');
+                    document.getElementById(button.dataset.region).classList.add('active');
+
+                    const iframes = document.getElementById(button.dataset.region).querySelectorAll('iframe');
+                    iframes.forEach(iframe => {
+                        iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                    });
+                });
+            });
+
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+
+            document.body.addEventListener('click', () => {
+                const activeGrid = document.querySelector('.image-grid.active');
+                if (activeGrid) {
+                    const iframes = activeGrid.querySelectorAll('iframe');
+                    iframes.forEach(iframe => {
+                        iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
